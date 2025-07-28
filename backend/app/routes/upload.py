@@ -9,6 +9,7 @@ from fastapi import APIRouter, UploadFile, Form, Query, HTTPException
 from app.ingest import parser, indexer
 from app.config.settings import settings
 from app.ingest.vector_store import client, get_database_info, get_data_directories
+from app.ingest.quality import score_chunk_quality
 
 # ---------------------------
 # Logging Setup
@@ -248,7 +249,12 @@ async def upload_file(file: UploadFile, company_id: str = Form(...)):
         document_type = document_type_map.get(file_extension, 'generic')
         
         logger.info(f"Using document type: {document_type} for file: {file.filename}")
-        
+
+        # Log chunking statistics
+        chunk_types = {}
+        total_words = 0
+        total_sentences = 0
+    
         # Use smart chunker
         try:
             chunk_results = chunk_document(
@@ -257,6 +263,10 @@ async def upload_file(file: UploadFile, company_id: str = Form(...)):
                 chunk_size=settings.chunk_size,
                 chunk_overlap=settings.chunk_overlap
             )
+
+
+            if settings.enable_chunk_quality_score:
+                chunk_results = score_chunk_quality(chunk_results)
             
             if not chunk_results:
                 raise HTTPException(status_code=400, detail="Document produced no valid chunks after smart processing")
@@ -270,10 +280,7 @@ async def upload_file(file: UploadFile, company_id: str = Form(...)):
                 chunks = chunks[:settings.max_chunks_per_document]
                 chunk_results = chunk_results[:settings.max_chunks_per_document]
             
-            # Log chunking statistics
-            chunk_types = {}
-            total_words = 0
-            total_sentences = 0
+
             
             for chunk_data in chunk_results:
                 metadata = chunk_data["metadata"]

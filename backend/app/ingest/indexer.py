@@ -42,7 +42,8 @@ def store_chunks(text_chunks: List[str], namespace: str, document_content: str =
         # Create or access collection for the given namespace
         collection = client.get_or_create_collection(
             name=namespace,
-            embedding_function=embedding_func
+            embedding_function=embedding_func,
+            metadata={"hnsw:space": "cosine"}  # optional, just for clarity
         )
         logger.debug(f"Vector collection '{namespace}' ready")
         

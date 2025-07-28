@@ -11,7 +11,25 @@ class Settings(BaseSettings):
     chunk_size: int = 1000
     chunk_overlap: int = 200  # New: overlap between chunks
     min_chunk_length: int = 10  # New: minimum chunk length to store
-    
+
+    # Token-Aware Chunking
+    token_chunk_size: int = 512
+    token_chunk_overlap: int = 30
+    tokenizer_model: str = "bert-base-uncased"
+
+    # Chunk Quality Scoring
+    enable_chunk_quality_score: bool = True
+    quality_score_threshold: float = 0.85  # below this is considered "low quality"
+
+    # Embedding Configuration
+    embedding_model_name: str = "bge-large-en-v1.5"
+    embedding_model_device: str = "cpu"  # or "cuda"
+
+    # Generation Parameters
+    generation_temperature: float = 0.2
+    generation_top_p: float = 0.95
+    generation_max_tokens: int = 512
+
     # Retrieval Configuration
     retrieval_top_k: int = 3
     similarity_threshold: float = 0.7  # New: minimum similarity score

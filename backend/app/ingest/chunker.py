@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 from app.config.settings import settings
+from app.llm.tokenizer import get_tokenizer
 
 # ---------------------------
 # Logging Setup
@@ -36,7 +37,12 @@ class DocumentChunker:
         self.chunk_size = chunk_size or settings.chunk_size
         self.chunk_overlap = chunk_overlap or settings.chunk_overlap
         self.min_chunk_length = min_chunk_length or settings.min_chunk_length
-        
+
+        # New: Token-aware configuration
+        self.token_chunk_size = settings.token_chunk_size
+        self.token_overlap = settings.token_chunk_overlap
+        self.tokenizer = get_tokenizer()
+                
         # Sentence boundary patterns
         self.sentence_endings = re.compile(r'[.!?]+\s+')
         self.paragraph_breaks = re.compile(r'\n\s*\n')
@@ -73,6 +79,12 @@ class DocumentChunker:
         
         logger.info(f"Chunking completed | Generated {len(final_chunks)} chunks")
         return final_chunks
+
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens using the configured tokenizer"""
+        if not self.tokenizer:
+            return len(text) // 4  # fallback estimate
+        return len(self.tokenizer.encode(text, add_special_tokens=False))
     
     def _preprocess_text(self, text: str) -> str:
         """Clean and normalize text before chunking"""
@@ -113,14 +125,14 @@ class DocumentChunker:
             if not para or len(para) < self.min_chunk_length:
                 continue
             
-            # If paragraph fits in current chunk, add it
-            if len(current_chunk) + len(para) + 2 <= self.chunk_size:
+            # If paragraph fits in current chunk by token count
+            if self._count_tokens(current_chunk + "\n\n" + para) <= self.token_chunk_size:
                 if current_chunk:
                     current_chunk += "\n\n" + para
                 else:
                     current_chunk = para
             else:
-                # Save current chunk if it has content
+                # Save current chunk
                 if current_chunk:
                     chunk_data = self._create_chunk_data(
                         current_chunk, chunk_index, start_char, "paragraph"
@@ -129,8 +141,8 @@ class DocumentChunker:
                     chunk_index += 1
                     start_char += len(current_chunk)
                 
-                # Handle large paragraphs that exceed chunk size
-                if len(para) > self.chunk_size:
+                # Handle large paragraphs that exceed token limit
+                if self._count_tokens(para) > self.token_chunk_size:
                     sentence_chunks = self._split_by_sentences(para, chunk_index, start_char)
                     chunks.extend(sentence_chunks)
                     chunk_index += len(sentence_chunks)
@@ -167,11 +179,10 @@ class DocumentChunker:
             if i < len(sentences) - 1:
                 sentence += ". "
             
-            # Check if adding this sentence would exceed chunk size
-            if len(current_chunk) + len(sentence) <= self.chunk_size:
+            # Token-aware limit
+            if self._count_tokens(current_chunk + sentence) <= self.token_chunk_size:
                 current_chunk += sentence
             else:
-                # Save current chunk
                 if current_chunk:
                     chunk_data = self._create_chunk_data(
                         current_chunk, chunk_index, char_offset, "sentence_group"
@@ -180,8 +191,7 @@ class DocumentChunker:
                     chunk_index += 1
                     char_offset += len(current_chunk)
                 
-                # Handle very long sentences
-                if len(sentence) > self.chunk_size:
+                if self._count_tokens(sentence) > self.token_chunk_size:
                     overflow_chunks = self._split_overflow_text(sentence, chunk_index, char_offset)
                     chunks.extend(overflow_chunks)
                     chunk_index += len(overflow_chunks)
@@ -190,7 +200,6 @@ class DocumentChunker:
                 else:
                     current_chunk = sentence
         
-        # Add remaining content
         if current_chunk:
             chunk_data = self._create_chunk_data(
                 current_chunk, chunk_index, char_offset, "sentence_group"
@@ -206,33 +215,22 @@ class DocumentChunker:
         chunks = []
         chunk_index = start_index
         
-        # Split by word boundaries as last resort
         words = text.split()
         current_chunk_words = []
-        current_length = 0
-        
         for word in words:
-            word_length = len(word) + 1  # +1 for space
-            
-            if current_length + word_length <= self.chunk_size:
+            trial_chunk = " ".join(current_chunk_words + [word])
+            if self._count_tokens(trial_chunk) <= self.token_chunk_size:
                 current_chunk_words.append(word)
-                current_length += word_length
             else:
-                # Save current chunk
-                if current_chunk_words:
-                    chunk_text = " ".join(current_chunk_words)
-                    chunk_data = self._create_chunk_data(
-                        chunk_text, chunk_index, start_char, "overflow"
-                    )
-                    chunks.append(chunk_data)
-                    chunk_index += 1
-                    start_char += len(chunk_text)
-                
-                # Start new chunk
+                chunk_text = " ".join(current_chunk_words)
+                chunk_data = self._create_chunk_data(
+                    chunk_text, chunk_index, start_char, "overflow"
+                )
+                chunks.append(chunk_data)
+                chunk_index += 1
+                start_char += len(chunk_text)
                 current_chunk_words = [word]
-                current_length = word_length
         
-        # Add remaining words
         if current_chunk_words:
             chunk_text = " ".join(current_chunk_words)
             chunk_data = self._create_chunk_data(
@@ -245,15 +243,12 @@ class DocumentChunker:
     def _create_chunk_data(self, text: str, index: int, start_char: int, chunk_type: str) -> Dict[str, Any]:
         """Create chunk data dictionary with metadata"""
         
-        # Calculate basic metrics
         word_count = len(text.split())
         sentence_count = len(self.sentence_endings.split(text))
+        token_count = self._count_tokens(text)
         
-        # Check for section headers or titles
         has_title = bool(self.section_headers.match(text.split('\n')[0]))
-        section_header = None
-        if has_title:
-            section_header = text.split('\n')[0].strip()
+        section_header = text.split('\n')[0].strip() if has_title else None
         
         metadata = ChunkMetadata(
             chunk_index=index,
@@ -265,22 +260,22 @@ class DocumentChunker:
             has_title=has_title,
             section_header=section_header
         )
-        
+        metadata_dict = metadata.__dict__
+        metadata_dict["token_count"] = token_count  # ← Add token count
+
         return {
             "text": text.strip(),
-            "metadata": metadata.__dict__
+            "metadata": metadata_dict
         }
     
     def _chunk_structured_document(self, text: str) -> List[Dict[str, Any]]:
         """Chunking strategy for structured documents (DOCX)"""
         logger.debug("Using structured document chunking strategy")
-        # For now, use generic strategy - can enhance later for DOCX-specific features
         return self._chunk_generic_text(text)
     
     def _chunk_pdf_style(self, text: str) -> List[Dict[str, Any]]:
         """Chunking strategy optimized for PDF documents"""
         logger.debug("Using PDF-style chunking strategy")
-        # For now, use generic strategy - can enhance later for PDF-specific features
         return self._chunk_generic_text(text)
     
     def _add_overlap_and_validate(self, chunks: List[Dict[str, Any]], original_text: str) -> List[Dict[str, Any]]:
@@ -295,20 +290,14 @@ class DocumentChunker:
         for i, chunk in enumerate(chunks):
             chunk_text = chunk["text"]
             
-            # Add overlap with previous chunk
             if i > 0 and self.chunk_overlap > 0:
                 prev_chunk_text = chunks[i-1]["text"]
-                
-                # Take last N characters from previous chunk
                 overlap_text = prev_chunk_text[-self.chunk_overlap:].strip()
-                
-                # Find a good breaking point (sentence or word boundary)
                 overlap_text = self._find_good_overlap(overlap_text)
                 
                 if overlap_text:
                     chunk_text = overlap_text + " " + chunk_text
             
-            # Update chunk with overlapped text
             updated_chunk = chunk.copy()
             updated_chunk["text"] = chunk_text
             updated_chunk["metadata"]["has_overlap"] = i > 0 and self.chunk_overlap > 0
@@ -319,15 +308,13 @@ class DocumentChunker:
     
     def _find_good_overlap(self, text: str) -> str:
         """Find a good breaking point for overlap text"""
-        if len(text) < 20:  # Too short for meaningful overlap
+        if len(text) < 20:
             return ""
         
-        # Try to break at sentence boundary
         sentences = self.sentence_endings.split(text)
         if len(sentences) > 1:
             return sentences[-1].strip()
         
-        # Fall back to word boundary
         words = text.split()
         if len(words) > 5:
             return " ".join(words[-5:])
@@ -341,12 +328,10 @@ class DocumentChunker:
         for chunk in chunks:
             text = chunk["text"].strip()
             
-            # Skip chunks that are too short
             if len(text) < self.min_chunk_length:
                 logger.debug(f"Skipping short chunk: {len(text)} characters")
                 continue
             
-            # Skip chunks that are mostly whitespace or punctuation
             if len(re.sub(r'[^\w]', '', text)) < 5:
                 logger.debug("Skipping chunk with minimal content")
                 continue

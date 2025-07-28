@@ -21,7 +21,7 @@ chat_router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     company_id: str
-    stream: bool = False  # New field for streaming control
+    stream: bool = False
 
 class StreamingChatRequest(BaseModel):
     message: str

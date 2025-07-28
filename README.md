@@ -1,12 +1,12 @@
 
 
-# SupportRAG - No-Code RAG Backend with macOS Demo App
+# EasyRAG - No-Code RAG Backend with macOS Demo App
 
-This is my open-source side project, SupportRAG, where I'm building a highly customizable, no-code Retrieval-Augmented Generation (RAG) system tailored for small enterprises. My primary goal is to create a robust chatbot backend that can serve as a foundation for applications like call center automation. The macOS SwiftUI app included is a demo to showcase the backend's capabilities, not the main focus of the project. I plan to expand this project as time and new technologies allow.
+This is my open-source side project, EasyRAG, where I'm building a highly customizable, no-code Retrieval-Augmented Generation (RAG) system tailored for small enterprises. My primary goal is to create a robust chatbot backend that can serve as a foundation for applications like call center automation. The macOS SwiftUI app included is a demo to showcase the backend's capabilities, not the main focus of the project. I plan to expand this project as time and new technologies allow.
 
 ## Project Overview
 
-SupportRAG combines a powerful FastAPI backend with a demo macOS app. The backend handles document ingestion, smart chunking, vector embeddings, and AI responses using local language models via Ollama and semantic search with ChromaDB. The macOS app demonstrates the workflow by allowing document uploads and chat interactions.
+EasyRAG combines a powerful FastAPI backend with a demo macOS app. The backend handles document ingestion, smart chunking, vector embeddings, and AI responses using local language models via Ollama and semantic search with ChromaDB. The macOS app demonstrates the workflow by allowing document uploads and chat interactions.
 
 ### Key Features
 - Upload .pdf, .docx, and .txt documents

@@ -76,7 +76,7 @@ struct ChatView: View {
                 }
             )
         }
-        .navigationTitle("")
+        .navigationTitle("Chat")
         .background(.regularMaterial)
     }
     

@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from app.config.settings import settings
 from app.ingest.vector_store import client, embedding_func
@@ -132,7 +133,8 @@ class ContextRetriever:
             # Get collection
             collection = client.get_or_create_collection(
                 name=namespace,
-                embedding_function=embedding_func
+                embedding_function=embedding_func,
+                metadata={"hnsw:space": "cosine"}  # optional, just for clarity
             )
             logger.debug(f"Vector collection '{namespace}' loaded")
             
@@ -159,13 +161,15 @@ class ContextRetriever:
     def _retrieve_relevant_chunks(self, collection, query_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Retrieve potentially relevant chunks using multiple strategies"""
         
+        start = time.perf_counter()
         # Primary vector search with expanded query
         vector_results = collection.query(
             query_texts=[query_data["expanded"]],
             n_results=min(settings.retrieval_top_k * 2, 20),  # Get more candidates for ranking
             include=["documents", "metadatas", "distances"]
         )
-        
+        elapsed = time.perf_counter() - start
+        logger.info(f"Vector search completed in {elapsed:.3f}s | Results: {len(vector_results.get('documents', [[]])[0])}")
         chunks = []
         
         if vector_results.get("documents") and vector_results["documents"][0]:
